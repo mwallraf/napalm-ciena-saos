@@ -29,6 +29,7 @@ from napalm.base.exceptions import (
 )
 from napalm.base.utils import py23_compat
 from napalm.base.netmiko_helpers import netmiko_args
+import re
 
 
 class CienaSAOSDriver(NetworkDriver):
@@ -146,7 +147,7 @@ class CienaSAOSDriver(NetworkDriver):
         }
 
         if retrieve in ('running', 'all'):
-            command = [ 'show running-config' ]
+            command = [ 'configuration show' ]
             output = self._send_command(command)
             configs['running'] = output
 
@@ -167,7 +168,94 @@ class CienaSAOSDriver(NetworkDriver):
 
     def get_facts(self):
         """Return a set of facts from the device."""
-        pass
+
+        facts = {
+            "vendor": "Ciena",
+            "uptime": None,
+            "os_version": None,
+            "os_version_installed": None,
+            "boot_version": None,
+            "application_build": None,
+            "serial_number": None,
+            "device_id": None,
+            "model": None,
+            "hostname": None,
+            "fqdn": None,
+            "mgmt_interface": None
+        }
+
+        # get output from device
+        show_software = self._send_command('software show')
+
+        for l in show_software.splitlines():
+            if "running package" in l.lower():
+                facts["os_version"] = l.split()[-2]
+                continue
+            if "installed package" in l.lower():
+                facts["os_version_installed"] = l.split()[-2]
+                continue
+            if "running kernel" in l.lower():
+                facts["boot_version"] = l.split()[-2]
+                continue
+            if "application build" in l.lower():
+                facts["application_build"] = l.split()[-2]
+                continue
+
+        return facts
+
+
+    def get_virtual_switch(self):
+        """
+        Returns a list of virtual switches based on the command "virtual-switch show"
+        Details per vswitch are found by:
+          virtual-switch show vs <vswitch>
+        """
+
+        vswitch_facts = []
+        vswitches = []
+
+        show_virtual_switches = self._send_command('virtual-switch show')
+        #print(show_virtual_switches)
+
+        # find all existing virtual-switches
+        for l in show_virtual_switches.splitlines():
+            m = re.match("\|\s*(?P<NAME>\S+)\s*\|\s*[0-9]+\s*\|\s*\S+\s*\|\s*\S+\s*\|\s*\S+\s*\|", l.strip())
+            if m:
+                vswitches.append(m.groupdict()["NAME"])
+
+        # for each vswitch find its details
+        for vs in vswitches:
+            vswitch = {
+                "name": None,
+                "id": None,
+                "description": None,
+                "active_vlan": None,
+                "vc": None
+            }
+            show_virtual_switch = self._send_command("virtual-switch show vs {}".format(vs))
+            #print(show_virtual_switch)
+            for l in show_virtual_switch.splitlines():
+                if l.startswith("| Name"):
+                    vswitch["name"] = l.split()[3]
+                    continue
+                if l.startswith("| ID"):
+                    vswitch["id"] = l.split()[3]
+                    continue
+                if l.startswith("| Description"):
+                    l.replace(" ", "")
+                    vswitch["description"] = l.split()[3]
+                    continue
+                if l.startswith("| Active VLAN"):
+                    vswitch["active_vlan"] = l.split()[5].replace("VLAN#", "")
+                    continue
+                if l.startswith("| VC"):
+                    vswitch["vc"] = l.split()[4]
+                    continue
+            vswitch_facts.append(vswitch)
+
+        return vswitch_facts
+
+
 
 
 if __name__ == '__main__':
