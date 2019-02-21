@@ -178,14 +178,24 @@ class CienaSAOSDriver(NetworkDriver):
             "application_build": None,
             "serial_number": None,
             "device_id": None,
+            "device_type": None,
             "model": None,
+            "description": None,
             "hostname": None,
             "fqdn": None,
-            "mgmt_interface": None
+            "domain_name": None,
+            "loopback_ipv4": None,
+            "remote_ipv4": None,
+            "chassis_mac": None
         }
 
         # get output from device
         show_software = self._send_command('software show')
+        show_system = self._send_command('system show host-name')
+        show_chassis = self._send_command('chassis show')
+        show_uptime = self._send_command('system show uptime')
+        show_interface = self._send_command('interface show')
+        show_dns = self._send_command('dns-client show domain-name')
 
         for l in show_software.splitlines():
             if "running package" in l.lower():
@@ -200,6 +210,55 @@ class CienaSAOSDriver(NetworkDriver):
             if "application build" in l.lower():
                 facts["application_build"] = l.split()[-2]
                 continue
+
+        for l in show_system.splitlines():
+            if "Oper" in l:
+                facts["hostname"] = l.split()[-2]
+
+        for l in show_chassis.splitlines():
+            if "Serial Number" in l:
+                facts["serial_number"] = l.split()[-2]
+                continue
+            if "Chassis MAC Address" in l:
+                facts["chassis_mac"] = l.split()[-2]
+                facts["device_id"] = l.split()[-2]
+                continue
+            if "Platform Name" in l:
+                facts["model"] = l.split()[-2]
+                continue
+            if "Platform Description" in l:
+                facts["description"] = l.split()[-2]
+                continue
+            if "Device Type" in l:
+                facts["device_type"] = l.split()[-2]
+
+        for l in show_interface.splitlines():
+            m = re.match(".*(?P<INTF>remote).* (?P<IPV4>[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}).*", l)
+            if m:
+                #facts["remote_interface"] = m.groupdict()["INTF"]
+                facts["remote_ipv4"] = m.groupdict()["IPV4"]
+                continue
+
+            m = re.match(".*(?P<INTF>lb).* (?P<IPV4>[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}).*", l)
+            if m:
+                #facts["loopback_interface"] = m.groupdict()["INTF"]
+                facts["loopback_ipv4"] = m.groupdict()["IPV4"]
+                continue
+
+        for l in show_dns.splitlines():
+            if "Oper" in l:
+                dn = l.split()[-2]
+                facts["domain_name"] = "" if len(dn) <= 1 else dn
+                if facts["domain_name"] and facts["hostname"]:
+                    facts["fqdn"] = "{}.{}".format(facts["hostname"], facts["domain_name"])
+                else:
+                    facts["fqdn"] = facts["hostname"]
+
+
+        facts["uptime"] = show_uptime.split(":")[-1].strip()
+
+
+
 
         return facts
 
