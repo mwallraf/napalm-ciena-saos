@@ -1,3 +1,14 @@
+
+# MOVE TO NAPALM COMMUNITY DRIVERS REPO
+
+This driver has been moved to the Napalm Automation Community repository, there will be no further updates in this location.
+
+Please check:  https://github.com/napalm-automation-community/napalm-ciena-saos
+
+
+
+
+
 # napalm-skeleton
 
 Congratulations! You are going to embark on an epic adventure that will bring you glory, fame and
